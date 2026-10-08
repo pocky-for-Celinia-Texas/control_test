@@ -3,12 +3,12 @@
 
 // BMI088(加速度计)寄存器地址及其存放的内容
 
-#define BMI088_ACC_CHIP_ID 0x00
+#define BMI088_ACC_CHIP_ID 0x00  // 加速度计芯片ID寄存器地址
 #define BMI088_ACC_CHIP_ID_VALUE 0x1E
 
-#define BMI088_ACC_DATA 0x12
+#define BMI088_ACC_DATA 0x12  // 加速度计数据寄存器地址
 
-#define BMI088_TEMP_DATA 0x22
+#define BMI088_TEMP_DATA 0x22  // 温度数据寄存器地址
 
 #define BMI088_ACC_CONF 0x40
 #define BMI088_ACC_CONF_MUST_SET 0x80

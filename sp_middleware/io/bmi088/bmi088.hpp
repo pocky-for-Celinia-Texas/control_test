@@ -1,6 +1,8 @@
 #ifndef SP__BMI088_HPP
 #define SP__BMI088_HPP
 
+#include <stm32f407xx.h>
+
 #include "gpio.h"
 #include "spi.h"
 
@@ -34,7 +36,7 @@ private:
   uint8_t rx_buff_[16];
   uint8_t tx_buff_[16];
 
-  float gyro_multipliers_[3]; // 存储三轴标度因数
+  float gyro_multipliers_[3];  // 存储三轴标度因数
 
   uint8_t acc_init();
   void acc_update();

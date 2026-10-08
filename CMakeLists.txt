@@ -67,6 +67,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     applications/data_interfaces/can/can.cpp
     applications/data_interfaces/can/can_recv.cpp
     applications/data_interfaces/uart/uart_recv.cpp
+    applications/tools/imu_task.cpp # <- 添加这一行
+    sp_middleware/io/bmi088/bmi088.cpp # <- 添加这一行
+    sp_middleware/tools/mahony/mahony.cpp # <- 添加这一行
+    sp_middleware/tools/gimbal/gimbal.cpp # <- 添加这一行
 )
 
 # Add include paths

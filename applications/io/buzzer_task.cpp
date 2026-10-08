@@ -10,9 +10,9 @@ extern "C" void buzzer_task()
 	for (int i = 0; i < 3; i++) {
 		buzzer.start();
 		buzzer.set(1000 + 500 * i, 0.01);
-		osDelay(100);
+		osDelay(50);
 		buzzer.stop();
-		osDelay(100);
+		osDelay(50);
 	}
 
 	while (true) {
