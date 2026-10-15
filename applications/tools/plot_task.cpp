@@ -28,12 +28,12 @@ extern "C" void plot_task()
 	while (1) {
 
     plotter.plot(
-      /*rm_motor_x.angle,
-      rm_motor_x.speed,
-      rm_motor_x.torque,*/
-      imu.yaw,
-      imu.pitch,
-      imu.roll
+      //rm_motor_x.angle,
+      //rm_motor_x.speed,
+      //rm_motor_x.torque
+      imu.vyaw,
+      imu.vpitch,
+      imu.vroll
       //sw_to_float(remote.sw_r)
 	);
 
