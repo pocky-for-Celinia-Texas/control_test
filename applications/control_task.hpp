@@ -3,8 +3,10 @@
 
 #include "motor/rm_motor/rm_motor.hpp"
 
-inline sp::RM_Motor rm_motor_x(1, sp::RM_Motors::GM6020);
-inline sp::RM_Motor rm_motor_y(2, sp::RM_Motors::GM6020);
+inline sp::RM_Motor rm_motor_x(1, sp::RM_Motors::M3508);   //右上 /A型
+inline sp::RM_Motor rm_motor_y(2, sp::RM_Motors::M3508);   //左上 \B型
+inline sp::RM_Motor rm_motor_x2(3, sp::RM_Motors::M3508);  //左下 /A型
+inline sp::RM_Motor rm_motor_y2(4, sp::RM_Motors::M3508);  //右下 \B型
 
 typedef struct
 {
