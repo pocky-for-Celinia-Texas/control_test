@@ -29,11 +29,11 @@ extern "C" void plot_task()
 
     plotter.plot(
       //rm_motor_x.angle,
-      //rm_motor_x.speed,
+      rm_motor_x.speed
       //rm_motor_x.torque
-      imu.vyaw,
-      imu.vpitch,
-      imu.vroll
+      //imu.vyaw,
+      //imu.vpitch,
+      //imu.vroll
       //sw_to_float(remote.sw_r)
 	);
 

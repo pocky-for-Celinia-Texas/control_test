@@ -600,7 +600,7 @@ sp::PID rm_motor_pid_speed_x2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, fal
 sp::PID rm_motor_pid_angle_y2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
 sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
 
-// 电机 X 固定 1:1
+static uint32_t up_accel_ms = 0;
 
 extern "C" void control_task()
 {
@@ -609,41 +609,61 @@ extern "C" void control_task()
 	can_start();
 	osDelay(100);
 
+	static sp::DBusSwitchMode last_sw_r = sp::DBusSwitchMode::DOWN;
+
 	while (true) {
+		// 检测拨杆模式变化：如果刚刚离开 UP 模式，则重置加速计时和速度环积分
+		bool mode_changed = (remote.sw_r != last_sw_r);
+		if (mode_changed && last_sw_r == sp::DBusSwitchMode::UP) {
+			up_accel_ms = 0;
+			rm_motor_pid_speed_x.clear();
+			rm_motor_pid_speed_y.clear();
+			rm_motor_pid_speed_x2.clear();
+			rm_motor_pid_speed_y2.clear();
+		}
+		last_sw_r = remote.sw_r;
+
 		//         右拨杆 UP：复位模式
 		// ========================================
 		if (remote.sw_r == sp::DBusSwitchMode::UP) {
-			float target_speed_x = 63.0f;
+			if (up_accel_ms < 500) {  //加速时间
+				up_accel_ms++;
+			}
+			float t = up_accel_ms / 500.0f;	 //加速时间
+			// 10t^3 - 15t^4 + 6t^5
+			float t2 = t * t;
+			float t3 = t2 * t;
+			float t4 = t3 * t;
+			float t5 = t4 * t;
+			float s = 10.0f * t3 - 15.0f * t4 + 6.0f * t5;
+			float target_speed_up = 200.0f * s;
 
-			rm_motor_pid_speed_x.calc(target_speed_x, rm_motor_x.speed);
+			rm_motor_pid_speed_x.calc(-target_speed_up, rm_motor_x.speed);
 			float ffm_x = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_x.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
-			float target_speed_y = 63.0f;
 
-			rm_motor_pid_speed_y.calc(target_speed_y, rm_motor_y.speed);
+			rm_motor_pid_speed_y.calc(target_speed_up, rm_motor_y.speed);
 			float ffm_y = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_y.cmd(rm_motor_pid_speed_y.out + ffm_y);
-			float target_speed_x2 = 63.0f;
 
-			rm_motor_pid_speed_x2.calc(target_speed_x2, rm_motor_x2.speed);
+			rm_motor_pid_speed_x2.calc(target_speed_up, rm_motor_x2.speed);
 			float ffm_x2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_x2.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_x2.cmd(rm_motor_pid_speed_x2.out + ffm_x2);
-			float target_speed_y2 = 63.0f;
 
-			rm_motor_pid_speed_y2.calc(target_speed_y2, rm_motor_y2.speed);
+			rm_motor_pid_speed_y2.calc(-target_speed_up, rm_motor_y2.speed);
 			float ffm_y2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y2.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_y2.cmd(rm_motor_pid_speed_y2.out + ffm_y2);
 		}
 
@@ -651,6 +671,7 @@ extern "C" void control_task()
 		//         右拨杆 MID：联动模式
 		// ========================================
 		else if (remote.sw_r == sp::DBusSwitchMode::MID) {
+#if 0  //调试时去掉mid档改为0
 			float direction = 0;
 			if (remote.ch_lu > 0.3f) {
 				direction = -1.0f;
@@ -664,36 +685,53 @@ extern "C" void control_task()
 			rm_motor_pid_speed_x.calc(target_speed_x, rm_motor_x.speed);
 			float ffm_x = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_x.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
+
 			float target_speed_y =
 				200.0f * remote.ch_lv + 200.0f * remote.ch_lh + direction * 63.0f;
 
 			rm_motor_pid_speed_y.calc(target_speed_y, rm_motor_y.speed);
 			float ffm_y = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_y.cmd(rm_motor_pid_speed_y.out + ffm_y);
+
 			float target_speed_x2 =
 				200.0f * remote.ch_lv - 200.0f * remote.ch_lh + direction * 63.0f;
 
 			rm_motor_pid_speed_x2.calc(target_speed_x2, rm_motor_x2.speed);
 			float ffm_x2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_x2.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_x2.cmd(rm_motor_pid_speed_x2.out + ffm_x2);
+
 			float target_speed_y2 =
 				-200.0f * remote.ch_lv - 200.0f * remote.ch_lh + direction * 63.0f;
 
 			rm_motor_pid_speed_y2.calc(target_speed_y2, rm_motor_y2.speed);
 			float ffm_y2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y2.out) > 0.5f) {  // 目标速度够大才补偿
-				ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
-			}*/
+                ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+            }*/
 			rm_motor_y2.cmd(rm_motor_pid_speed_y2.out + ffm_y2);
+#else
+			rm_motor_x.cmd(0.0f);
+			rm_motor_y.cmd(0.0f);
+			rm_motor_x2.cmd(0.0f);
+			rm_motor_y2.cmd(0.0f);
+			rm_motor_pid_angle_x.clear();
+			rm_motor_pid_speed_x.clear();
+			rm_motor_pid_angle_y.clear();
+			rm_motor_pid_speed_y.clear();
+			rm_motor_pid_angle_x2.clear();
+			rm_motor_pid_speed_x2.clear();
+			rm_motor_pid_angle_y2.clear();
+			rm_motor_pid_speed_y2.clear();
+#endif
 		}
 
 		// ========================================
