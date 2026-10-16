@@ -13,12 +13,18 @@
 #include "control_task.hpp"	 // 四个电机对象 rm_motor_x / y / x2 / y2
 #include "tools/mecanum/mecanum.hpp"
 
-// ================ 按你的车填这 4 个数 ================
-constexpr float WHEEL_RADIUS = 0.076f;	// 轮子【半径】，m（不是直径！）
-constexpr float GEAR_RATIO = 13.7f;		// 减速比 ≈13.7
-constexpr float HALF_LENGTH = 0.200f;	// 轴距的一半，m
-constexpr float HALF_WIDTH = 0.200f;	// 轮距的一半，m
-// ===================================================
+// ================ 整车机械参数（按实车填，只在这里填一次）================
+// 这几个数决定"轮子转多快 = 车走多快"，填错会让车速、行驶路程全部按比例错
+constexpr float WHEEL_RADIUS = 0.076f;	// 轮子【半径】m（注意是半径不是直径！6寸轮≈0.076）
+constexpr float GEAR_RATIO = 13.7f;	// 减速比（电机转子转 13.7 圈 = 轮子转 1 圈）
+constexpr float HALF_LENGTH = 0.200f;	// ★占位值待实测★ 轴距/2 m（只影响 wz 自转解算，不影响前进距离）
+constexpr float HALF_WIDTH = 0.200f;	// ★占位值待实测★ 轮距/2 m（同上，这两个数只以"和"参与运算）
+// =======================================================================
+
+// ---- 由上面 4 个数推导的换算系数（不要手改）----
+// 转子角速度 rad/s ↔ 车轮线速度 m/s：  v[m/s] = ω_转子 × WHEEL_RADIUS / GEAR_RATIO
+constexpr float ROTOR_PER_MPS = GEAR_RATIO / WHEEL_RADIUS;	// 当前 = 180.26
+constexpr float MPS_PER_ROTOR = WHEEL_RADIUS / GEAR_RATIO;	// 当前 = 0.005547
 
 struct ChassisSpeed
 {

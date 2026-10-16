@@ -601,8 +601,75 @@ sp::PID rm_motor_pid_speed_x2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, fal
 sp::PID rm_motor_pid_angle_y2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
 sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
 
+// ==========================================================================================
+//  UP 档（自动前进到指定路程后停车）参数区 —— 调参只改这一块
+//  ★完整调参说明 + 对照表见：applications/readme.md★
+// ==========================================================================================
+//  一次动作：S形加速 → 匀速 → S形减速 → 停在 UP_RUN_DIST 处
+//  【三个主旋钮】
+//    UP_SPEED_MPS  想跑多快（m/s）
+//    UP_ACCEL_MS   起步加到满速用多久（ms）—— 越小，曲线越陡、加速越猛
+//    UP_DECEL_MS   从满速减到 0 用多久（ms）—— 越小，曲线越陡、停车越猛
+//  曲线形状固定（五次 S 曲线），上面两个"时长"只决定它的胖瘦（横向伸缩），形状本身
+//  不变；所以无论调多陡，"两端加速度为 0、全程没有加速度阶跃"这个特性都不会丢。
+//  长度 m、速度 m/s、时间 ms
+// ==========================================================================================
+constexpr float UP_SPEED_MPS = 1.11f;	   // 巡航(最大)速度 m/s；1.11 ≈ 原来硬编码的 200 转子rad/s
+constexpr float UP_RUN_DIST = 3.0f;		   // 目标路程 m（净位移：前进为正，被推后退会减回去）
+constexpr uint32_t UP_ACCEL_MS = 870;	   // 加速段时长 ms（越小越猛）
+constexpr uint32_t UP_DECEL_MS = 870;	   // 减速段时长 ms（越小越猛）
+constexpr float UP_STOP_DEADBAND = 0.02f;  // 收尾死区 m：最后这点距离直接归零，避免低速爬行
+// ==========================================================================================
+
+// ---- 以下全部由上面推导，不要手改（注释里是当前参数下的实际值）----
+constexpr float S_CURVE_PEAK_SLOPE = 1.875f;  // 五次 S 曲线的峰值斜率（在 u=0.5 处）
+constexpr float S_CURVE_MEAN = 0.5f;		  // 五次 S 曲线的区间均值 ∫₀¹s du
+
+constexpr float UP_ACCEL_S = UP_ACCEL_MS * 0.001f;				// = 0.870 s
+constexpr float UP_DECEL_S = UP_DECEL_MS * 0.001f;				// = 0.870 s
+constexpr float UP_SPEED_ROTOR = UP_SPEED_MPS * ROTOR_PER_MPS;	// = 200.1 转子 rad/s
+
+// 峰值加速度 = 峰值斜率 × 速度 ÷ 时长（由"时长"反推出来，供打滑校验用）
+constexpr float UP_ACCEL_PEAK =
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_ACCEL_S;	 // = 2.39 m/s²(0.24g)
+constexpr float UP_DECEL_PEAK =
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_DECEL_S;	 // = 2.39 m/s²(0.24g)
+
+// S 形曲线走完一段的路程 = 速度 × 时长 × 区间均值(0.5)
+constexpr float UP_ACCEL_DIST = UP_SPEED_MPS * UP_ACCEL_S * S_CURVE_MEAN;  // = 0.483 m
+constexpr float UP_DECEL_DIST = UP_SPEED_MPS * UP_DECEL_S * S_CURVE_MEAN;  // = 0.483 m
+constexpr float UP_DECEL_START = UP_RUN_DIST - UP_DECEL_DIST;	  // = 2.517 m（供参考/调试观察）
+constexpr float UP_ARRIVE_DIST = UP_RUN_DIST - UP_STOP_DEADBAND;  // = 2.980 m 判定"到达"
+
+// 预计总时长 ≈ 加速时长 + 全程按巡航速度跑完的时间；超时给 2 倍 + 3 s 余量
+constexpr float UP_EST_S = UP_ACCEL_S + UP_RUN_DIST / UP_SPEED_MPS;			// = 3.57 s
+constexpr uint32_t UP_TIMEOUT_MS = (uint32_t)(UP_EST_S * 2000.0f) + 3000u;	// = 10145 ms
+
+// ---- 配置守卫：调参调坏了，编译期就报错，不会等车在场上打滑 ----
+static_assert(UP_ACCEL_MS > 0 && UP_DECEL_MS > 0, "加减速时长必须 > 0");
+static_assert(
+	UP_DECEL_DIST < UP_RUN_DIST,
+	"减速段路程 >= 目标路程：起步时减速限速就已生效，会以高速起步。请调大 UP_RUN_DIST 或调小 "
+	"UP_DECEL_MS");
+static_assert(
+	UP_ACCEL_PEAK < 4.0f && UP_DECEL_PEAK < 4.0f,
+	"加减速度超过约 0.4g：麦轮会打滑。请调大 UP_ACCEL_MS / UP_DECEL_MS");
+
+// 五次平滑阶跃：u∈[0,1] → [0,1]；两端一阶导、二阶导都为 0
+// ⟹ 加/减速的起止都没有冲击（这是防打滑的关键）
+static float smoothstep5(float u)
+{
+	if (u < 0.0f) u = 0.0f;
+	if (u > 1.0f) u = 1.0f;
+	float u2 = u * u;
+	return u2 * u * (10.0f + u * (-15.0f + 6.0f * u));	// 10u³ − 15u⁴ + 6u⁵
+}
+
 static uint32_t up_accel_ms = 0;
-static float up_distance_m = 0.0f;	// UP 档已行驶路程(净位移), 单位: m
+static float up_distance_m = 0.0f;		 // UP 档已行驶路程(净位移), 单位: m
+static bool up_finished = false;		 // 本次动作是否已完成(到点/超时), 锁存防抖
+static uint32_t up_start_ms = 0;		 // 本次动作开始时刻, 超时兜底用
+static float up_stop_distance_m = 0.0f;	 // 停车瞬间的路程读数, 便于复盘"它以为自己停在哪"
 
 extern "C" void control_task()
 {
@@ -623,26 +690,40 @@ extern "C" void control_task()
 			rm_motor_pid_speed_x2.clear();
 			rm_motor_pid_speed_y2.clear();
 		}
-		// 刚切入 UP 档：路程清零
+		// 刚切入 UP 档：路程、计时、完成标志全部复位（每次切档 = 重新跑一次动作）
 		if (mode_changed && remote.sw_r == sp::DBusSwitchMode::UP) {
 			up_distance_m = 0.0f;
+			up_accel_ms = 0;
+			up_finished = false;
+			up_start_ms = osKernelSysTick();
 		}
 		last_sw_r = remote.sw_r;
 
 		//         右拨杆 UP：自动模式
 		// ========================================
 		if (remote.sw_r == sp::DBusSwitchMode::UP) {
-			if (up_accel_ms < 500) {  //加速时间
+			if (up_accel_ms < UP_ACCEL_MS) {  //加速计时
 				up_accel_ms++;
 			}
-			float t = up_accel_ms / 500.0f;	 //加速时间
-			// 10t^3 - 15t^4 + 6t^5
-			float t2 = t * t;
-			float t3 = t2 * t;
-			float t4 = t3 * t;
-			float t5 = t4 * t;
-			float s = 10.0f * t3 - 15.0f * t4 + 6.0f * t5;
-			float target_speed_up = 200.0f * s;	 //target_speed_up 单个轮子目标角速度
+			// ① 起步/匀速段：时间驱动的 S 曲线（u 从 0 涨到 1）
+			float s_acc = smoothstep5((float)up_accel_ms / (float)UP_ACCEL_MS);
+
+			// ② 停车段：剩余距离驱动的同一条 S 曲线（剩余距离从 d_dec 降到 0）
+			//    剩 d_dec 时 s_dec=1（正好开始减速），剩 0 时 s_dec=0（正好停住）
+			float remaining = UP_RUN_DIST - up_distance_m;
+			if (remaining < 0.0f) remaining = 0.0f;
+			float s_dec = smoothstep5(remaining / UP_DECEL_DIST);
+
+			// ③ 取小 → 自动拼出「S形加速 + 匀速 + S形减速」
+			//    两条曲线在切换点都等于 1，所以切换处速度连续，不会有任何突变
+			float s = (s_acc < s_dec) ? s_acc : s_dec;
+
+			// ④ 收尾：最后一点距离直接归零（避免低速爬行）；动作完成后锁死
+			if (remaining < UP_STOP_DEADBAND || up_finished) {
+				s = 0.0f;
+			}
+
+			float target_speed_up = UP_SPEED_ROTOR * s;	 //单个轮子目标角速度(转子 rad/s)
 
 			rm_motor_pid_speed_x.calc(-target_speed_up, rm_motor_x.speed);
 			float ffm_x = 0.0f;
@@ -763,8 +844,18 @@ extern "C" void control_task()
 		// UP 档：用刚更新完的车速积分路程(净位移，前进为正)
 		// 循环周期恰好 1 ms(osDelay(1) + 1kHz tick)，所以 dt 直接写 0.001f
 		// 电机掉线时车速会停在旧值，用 valid 挡住，避免路程一直虚涨
-		if (remote.sw_r == sp::DBusSwitchMode::UP && chassis.valid) {
+		if (remote.sw_r == sp::DBusSwitchMode::UP && !up_finished && chassis.valid) {
 			up_distance_m += chassis.vx * 0.001f;
+		}
+
+		// 到点 / 超时 → 锁存停车
+		// 注意：超时判断不能加 valid 条件 —— 掉线时路程不涨，否则车会一直冲出去
+		if (remote.sw_r == sp::DBusSwitchMode::UP && !up_finished) {
+			if (up_distance_m >= UP_ARRIVE_DIST ||
+				(osKernelSysTick() - up_start_ms) > UP_TIMEOUT_MS) {
+				up_finished = true;
+				up_stop_distance_m = up_distance_m;	 // 记录停车读数，便于复盘
+			}
 		}
 
 		send_rm_motor();
