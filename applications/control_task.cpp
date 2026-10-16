@@ -614,7 +614,11 @@ extern "C" void control_task()
 		// ========================================
 		if (remote.sw_r == sp::DBusSwitchMode::UP) {
 #if 1  //第一套方案填1,第二套方案填0
-
+			float caculated_target_speed_x = 0.0f;
+			float target_speed_x = caculated_target_speed_x;
+			rm_motor_pid_speed_x.calc(target_speed_x, rm_motor_x.speed);
+			float ffm_x = 0.0f;
+			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
 #else
 
 #endif
