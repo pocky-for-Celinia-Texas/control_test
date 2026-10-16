@@ -613,15 +613,38 @@ extern "C" void control_task()
 		//         右拨杆 UP：复位模式
 		// ========================================
 		if (remote.sw_r == sp::DBusSwitchMode::UP) {
-#if 1  //第一套方案填1,第二套方案填0
-			float caculated_target_speed_x = 0.0f;
-			float target_speed_x = caculated_target_speed_x;
+			float target_speed_x = 63.0f;
+
 			rm_motor_pid_speed_x.calc(target_speed_x, rm_motor_x.speed);
 			float ffm_x = 0.0f;
+			/*if (fabsf(rm_motor_pid_speed_x.out) > 0.5f) {  // 目标速度够大才补偿
+				ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
+			}*/
 			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
-#else
+			float target_speed_y = 63.0f;
 
-#endif
+			rm_motor_pid_speed_y.calc(target_speed_y, rm_motor_y.speed);
+			float ffm_y = 0.0f;
+			/*if (fabsf(rm_motor_pid_speed_y.out) > 0.5f) {  // 目标速度够大才补偿
+				ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
+			}*/
+			rm_motor_y.cmd(rm_motor_pid_speed_y.out + ffm_y);
+			float target_speed_x2 = 63.0f;
+
+			rm_motor_pid_speed_x2.calc(target_speed_x2, rm_motor_x2.speed);
+			float ffm_x2 = 0.0f;
+			/*if (fabsf(rm_motor_pid_speed_x2.out) > 0.5f) {  // 目标速度够大才补偿
+				ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+			}*/
+			rm_motor_x2.cmd(rm_motor_pid_speed_x2.out + ffm_x2);
+			float target_speed_y2 = 63.0f;
+
+			rm_motor_pid_speed_y2.calc(target_speed_y2, rm_motor_y2.speed);
+			float ffm_y2 = 0.0f;
+			/*if (fabsf(rm_motor_pid_speed_y2.out) > 0.5f) {  // 目标速度够大才补偿
+				ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
+			}*/
+			rm_motor_y2.cmd(rm_motor_pid_speed_y2.out + ffm_y2);
 		}
 
 		// ========================================
