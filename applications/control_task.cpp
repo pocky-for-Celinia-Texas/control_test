@@ -569,6 +569,7 @@ extern "C" void control_task()
 }*/
 #include "control_task.hpp"
 
+#include "chassis_speed.hpp"
 #include "cmsis_os.h"
 #include "data_interfaces/can/can.hpp"
 #include "data_interfaces/uart/uart.hpp"
@@ -601,6 +602,7 @@ sp::PID rm_motor_pid_angle_y2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, tru
 sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
 
 static uint32_t up_accel_ms = 0;
+static float up_distance_m = 0.0f;	// UP 档已行驶路程(净位移), 单位: m
 
 extern "C" void control_task()
 {
@@ -621,9 +623,13 @@ extern "C" void control_task()
 			rm_motor_pid_speed_x2.clear();
 			rm_motor_pid_speed_y2.clear();
 		}
+		// 刚切入 UP 档：路程清零
+		if (mode_changed && remote.sw_r == sp::DBusSwitchMode::UP) {
+			up_distance_m = 0.0f;
+		}
 		last_sw_r = remote.sw_r;
 
-		//         右拨杆 UP：复位模式
+		//         右拨杆 UP：自动模式
 		// ========================================
 		if (remote.sw_r == sp::DBusSwitchMode::UP) {
 			if (up_accel_ms < 500) {  //加速时间
@@ -636,7 +642,7 @@ extern "C" void control_task()
 			float t4 = t3 * t;
 			float t5 = t4 * t;
 			float s = 10.0f * t3 - 15.0f * t4 + 6.0f * t5;
-			float target_speed_up = 200.0f * s;
+			float target_speed_up = 200.0f * s;	 //target_speed_up 单个轮子目标角速度
 
 			rm_motor_pid_speed_x.calc(-target_speed_up, rm_motor_x.speed);
 			float ffm_x = 0.0f;
@@ -750,6 +756,15 @@ extern "C" void control_task()
 			rm_motor_pid_speed_x2.clear();
 			rm_motor_pid_angle_y2.clear();
 			rm_motor_pid_speed_y2.clear();
+		}
+
+		update_chassis_speed();
+
+		// UP 档：用刚更新完的车速积分路程(净位移，前进为正)
+		// 循环周期恰好 1 ms(osDelay(1) + 1kHz tick)，所以 dt 直接写 0.001f
+		// 电机掉线时车速会停在旧值，用 valid 挡住，避免路程一直虚涨
+		if (remote.sw_r == sp::DBusSwitchMode::UP && chassis.valid) {
+			up_distance_m += chassis.vx * 0.001f;
 		}
 
 		send_rm_motor();
