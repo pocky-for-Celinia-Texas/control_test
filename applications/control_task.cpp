@@ -614,10 +614,11 @@ sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, fal
 //  不变；所以无论调多陡，"两端加速度为 0、全程没有加速度阶跃"这个特性都不会丢。
 //  长度 m、速度 m/s、时间 ms
 // ==========================================================================================
-constexpr float UP_SPEED_MPS = 1.11f;	   // 巡航(最大)速度 m/s；1.11 ≈ 原来硬编码的 200 转子rad/s
+constexpr float UP_SPEED_MPS =
+	1.56f;	// 巡航(最大)速度 m/s；想跑更快，必须同时调大UP_ACCEL_MS /UP_DECEL_MS（把 S 形曲线拉胖）否则峰值加速度会超限、起步打滑。
 constexpr float UP_RUN_DIST = 3.0f;		   // 目标路程 m（净位移：前进为正，被推后退会减回去）
-constexpr uint32_t UP_ACCEL_MS = 870;	   // 加速段时长 ms（越小越猛）
-constexpr uint32_t UP_DECEL_MS = 870;	   // 减速段时长 ms（越小越猛）
+constexpr uint32_t UP_ACCEL_MS = 1000;	   // 加速段时长 ms（越小越猛）
+constexpr uint32_t UP_DECEL_MS = 1000;	   // 减速段时长 ms（越小越猛）
 constexpr float UP_STOP_DEADBAND = 0.02f;  // 收尾死区 m：最后这点距离直接归零，避免低速爬行
 // ==========================================================================================
 
@@ -625,25 +626,25 @@ constexpr float UP_STOP_DEADBAND = 0.02f;  // 收尾死区 m：最后这点距�
 constexpr float S_CURVE_PEAK_SLOPE = 1.875f;  // 五次 S 曲线的峰值斜率（在 u=0.5 处）
 constexpr float S_CURVE_MEAN = 0.5f;		  // 五次 S 曲线的区间均值 ∫₀¹s du
 
-constexpr float UP_ACCEL_S = UP_ACCEL_MS * 0.001f;				// = 0.870 s
-constexpr float UP_DECEL_S = UP_DECEL_MS * 0.001f;				// = 0.870 s
-constexpr float UP_SPEED_ROTOR = UP_SPEED_MPS * ROTOR_PER_MPS;	// = 200.1 转子 rad/s
+constexpr float UP_ACCEL_S = UP_ACCEL_MS * 0.001f;				// = 1.000 s
+constexpr float UP_DECEL_S = UP_DECEL_MS * 0.001f;				// = 1.000 s
+constexpr float UP_SPEED_ROTOR = UP_SPEED_MPS * ROTOR_PER_MPS;	// = 360.5 转子 rad/s
 
 // 峰值加速度 = 峰值斜率 × 速度 ÷ 时长（由"时长"反推出来，供打滑校验用）
 constexpr float UP_ACCEL_PEAK =
-	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_ACCEL_S;	 // = 2.39 m/s²(0.24g)
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_ACCEL_S;	 // = 3.75 m/s²(0.38g)
 constexpr float UP_DECEL_PEAK =
-	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_DECEL_S;	 // = 2.39 m/s²(0.24g)
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_DECEL_S;	 // = 3.75 m/s²(0.38g)
 
 // S 形曲线走完一段的路程 = 速度 × 时长 × 区间均值(0.5)
-constexpr float UP_ACCEL_DIST = UP_SPEED_MPS * UP_ACCEL_S * S_CURVE_MEAN;  // = 0.483 m
-constexpr float UP_DECEL_DIST = UP_SPEED_MPS * UP_DECEL_S * S_CURVE_MEAN;  // = 0.483 m
-constexpr float UP_DECEL_START = UP_RUN_DIST - UP_DECEL_DIST;	  // = 2.517 m（供参考/调试观察）
+constexpr float UP_ACCEL_DIST = UP_SPEED_MPS * UP_ACCEL_S * S_CURVE_MEAN;  // = 1.000 m
+constexpr float UP_DECEL_DIST = UP_SPEED_MPS * UP_DECEL_S * S_CURVE_MEAN;  // = 1.000 m
+constexpr float UP_DECEL_START = UP_RUN_DIST - UP_DECEL_DIST;	  // = 2.000 m（供参考/调试观察）
 constexpr float UP_ARRIVE_DIST = UP_RUN_DIST - UP_STOP_DEADBAND;  // = 2.980 m 判定"到达"
 
 // 预计总时长 ≈ 加速时长 + 全程按巡航速度跑完的时间；超时给 2 倍 + 3 s 余量
-constexpr float UP_EST_S = UP_ACCEL_S + UP_RUN_DIST / UP_SPEED_MPS;			// = 3.57 s
-constexpr uint32_t UP_TIMEOUT_MS = (uint32_t)(UP_EST_S * 2000.0f) + 3000u;	// = 10145 ms
+constexpr float UP_EST_S = UP_ACCEL_S + UP_RUN_DIST / UP_SPEED_MPS;			// = 2.50 s
+constexpr uint32_t UP_TIMEOUT_MS = (uint32_t)(UP_EST_S * 2000.0f) + 3000u;	// = 8000 ms
 
 // ---- 配置守卫：调参调坏了，编译期就报错，不会等车在场上打滑 ----
 static_assert(UP_ACCEL_MS > 0 && UP_DECEL_MS > 0, "加减速时长必须 > 0");
@@ -758,7 +759,7 @@ extern "C" void control_task()
 		//         右拨杆 MID：联动模式
 		// ========================================
 		else if (remote.sw_r == sp::DBusSwitchMode::MID) {
-#if 0  //调试时去掉mid档改为0
+#if 1  //调试时去掉mid档改为0
 			float direction = 0;
 			if (remote.ch_lu > 0.3f) {
 				direction = -1.0f;

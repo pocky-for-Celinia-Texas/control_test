@@ -1,3 +1,4 @@
+#include "chassis_speed.hpp"  // ← chassis.vx / vy / wz 在这里定义
 #include "cmsis_os.h"
 #include "control_task.hpp"
 #include "data_interfaces/uart/uart.hpp"
@@ -29,12 +30,14 @@ extern "C" void plot_task()
 
     plotter.plot(
       //rm_motor_x.angle,
-      rm_motor_x.speed
+      //rm_motor_x.speed
       //rm_motor_x.torque
       //imu.vyaw,
       //imu.vpitch,
       //imu.vroll
       //sw_to_float(remote.sw_r)
+	  chassis.vx,
+	  power_meter.power
 	);
 
 		osDelay(5);

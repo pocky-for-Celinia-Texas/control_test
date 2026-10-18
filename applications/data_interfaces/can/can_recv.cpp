@@ -8,6 +8,7 @@ void can1_recv(uint32_t stamp_ms)
 	if (can1.rx_id == rm_motor_y.rx_id) rm_motor_y.read(can1.rx_data, stamp_ms);
 	if (can1.rx_id == rm_motor_x2.rx_id) rm_motor_x2.read(can1.rx_data, stamp_ms);
 	if (can1.rx_id == rm_motor_y2.rx_id) rm_motor_y2.read(can1.rx_data, stamp_ms);
+	if (can1.rx_id == PowerMeter::RX_ID) power_meter.read(can1.rx_data, stamp_ms);	//功率计
 }
 
 void can2_recv(uint32_t stamp_ms) { can2.recv(); }
