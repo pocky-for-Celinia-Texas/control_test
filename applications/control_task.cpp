@@ -586,20 +586,30 @@ GimbalData rm_motor_data_x2;
 GimbalData rm_motor_data_y2;
 
 // 电机 X 的两环 PID
-sp::PID rm_motor_pid_angle_x(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
-sp::PID rm_motor_pid_speed_x(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
+sp::PID rm_motor_pid_angle_x(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 0.0f, true, true);
+sp::PID rm_motor_pid_speed_x(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 0.0f, false, true);
 
 // 电机 Y 的两环 PID
-sp::PID rm_motor_pid_angle_y(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
-sp::PID rm_motor_pid_speed_y(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
+sp::PID rm_motor_pid_angle_y(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 0.0f, true, true);
+sp::PID rm_motor_pid_speed_y(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 0.0f, false, true);
 
 // 电机 X2 的两环 PID
-sp::PID rm_motor_pid_angle_x2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
-sp::PID rm_motor_pid_speed_x2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
+sp::PID rm_motor_pid_angle_x2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 0.0f, true, true);
+sp::PID rm_motor_pid_speed_x2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 0.0f, false, true);
 
 // 电机 Y2 的两环 PID
-sp::PID rm_motor_pid_angle_y2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 1.0f, true, true);
-sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 1.0f, false, true);
+sp::PID rm_motor_pid_angle_y2(0.001f, 50.0f, 1.0f, 1.0f, 400.0f, 5.0f, 0.0f, true, true);
+sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 0.0f, false, true);
+
+// ==========================================================================================
+//  功率限制参数区
+// ==========================================================================================
+//  裁判系统的 chassis_power_limit（referee_protocol.hpp:251）还没接进本工程
+//  （CMakeLists 里没有编译 referee/*.cpp），所以这里先用常量。
+//  接上之后把 constexpr 改成 float，在循环里 P_max = 裁判系统读到的值。
+// ==========================================================================================
+constexpr float P_MAX_W = 75.0f;  // W，底盘功率上限
+// ==========================================================================================
 
 // ==========================================================================================
 //  UP 档（自动前进到指定路程后停车）参数区 —— 调参只改这一块
@@ -628,23 +638,23 @@ constexpr float S_CURVE_MEAN = 0.5f;		  // 五次 S 曲线的区间均值 ∫₀
 
 constexpr float UP_ACCEL_S = UP_ACCEL_MS * 0.001f;				// = 1.000 s
 constexpr float UP_DECEL_S = UP_DECEL_MS * 0.001f;				// = 1.000 s
-constexpr float UP_SPEED_ROTOR = UP_SPEED_MPS * ROTOR_PER_MPS;	// = 360.5 转子 rad/s
+constexpr float UP_SPEED_ROTOR = UP_SPEED_MPS * ROTOR_PER_MPS;	// ≈ 281 转子 rad/s
 
 // 峰值加速度 = 峰值斜率 × 速度 ÷ 时长（由"时长"反推出来，供打滑校验用）
 constexpr float UP_ACCEL_PEAK =
-	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_ACCEL_S;	 // = 3.75 m/s²(0.38g)
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_ACCEL_S;	 // ≈ 2.93 m/s²(0.30g)
 constexpr float UP_DECEL_PEAK =
-	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_DECEL_S;	 // = 3.75 m/s²(0.38g)
+	S_CURVE_PEAK_SLOPE * UP_SPEED_MPS / UP_DECEL_S;	 // ≈ 2.93 m/s²(0.30g)
 
 // S 形曲线走完一段的路程 = 速度 × 时长 × 区间均值(0.5)
-constexpr float UP_ACCEL_DIST = UP_SPEED_MPS * UP_ACCEL_S * S_CURVE_MEAN;  // = 1.000 m
-constexpr float UP_DECEL_DIST = UP_SPEED_MPS * UP_DECEL_S * S_CURVE_MEAN;  // = 1.000 m
-constexpr float UP_DECEL_START = UP_RUN_DIST - UP_DECEL_DIST;	  // = 2.000 m（供参考/调试观察）
+constexpr float UP_ACCEL_DIST = UP_SPEED_MPS * UP_ACCEL_S * S_CURVE_MEAN;  // = 0.780 m
+constexpr float UP_DECEL_DIST = UP_SPEED_MPS * UP_DECEL_S * S_CURVE_MEAN;  // = 0.780 m
+constexpr float UP_DECEL_START = UP_RUN_DIST - UP_DECEL_DIST;	  // = 2.220 m（供参考/调试观察）
 constexpr float UP_ARRIVE_DIST = UP_RUN_DIST - UP_STOP_DEADBAND;  // = 2.980 m 判定"到达"
 
 // 预计总时长 ≈ 加速时长 + 全程按巡航速度跑完的时间；超时给 2 倍 + 3 s 余量
-constexpr float UP_EST_S = UP_ACCEL_S + UP_RUN_DIST / UP_SPEED_MPS;			// = 2.50 s
-constexpr uint32_t UP_TIMEOUT_MS = (uint32_t)(UP_EST_S * 2000.0f) + 3000u;	// = 8000 ms
+constexpr float UP_EST_S = UP_ACCEL_S + UP_RUN_DIST / UP_SPEED_MPS;			// = 2.92 s
+constexpr uint32_t UP_TIMEOUT_MS = (uint32_t)(UP_EST_S * 2000.0f) + 3000u;	// ≈ 8846 ms
 
 // ---- 配置守卫：调参调坏了，编译期就报错，不会等车在场上打滑 ----
 static_assert(UP_ACCEL_MS > 0 && UP_DECEL_MS > 0, "加减速时长必须 > 0");
@@ -664,6 +674,29 @@ static float smoothstep5(float u)
 	if (u > 1.0f) u = 1.0f;
 	float u2 = u * u;
 	return u2 * u * (10.0f + u * (-15.0f + 6.0f * u));	// 10u³ − 15u⁴ + 6u⁵
+}
+
+// 给 Plotter 用：本帧实际生效的缩放系数、本帧预测功率（不缩放时会用多少瓦）
+float power_k = 1.0f;
+float power_pin_pred = 0.0f;
+
+// 四台电机的目标转矩 → 功率限制 → 下发
+// 顺序必须是「四台目标转矩全部算完 → 统一乘 K → 一起 cmd」。
+// 算一台发一台是错的：第一台下发时 K 还没定，这一帧就已经不守恒。
+static void power_limited_cmd(float t_x, float t_y, float t_x2, float t_y2)
+{
+	// τ 用即将下发的指令，ω 用反馈转速（转速是缩不了的）
+	motor_sums.update_raw(
+		t_x, rm_motor_x.speed, t_y, rm_motor_y.speed, t_x2, rm_motor_x2.speed, t_y2,
+		rm_motor_y2.speed);
+
+	power_pin_pred = motor_sums.p_in;	   // 预测：K=1 时会有多少瓦（> P_MAX_W 就是在限）
+	power_k = motor_sums.calc_k(P_MAX_W);  // [0, 1]
+
+	rm_motor_x.cmd(t_x * power_k);
+	rm_motor_y.cmd(t_y * power_k);
+	rm_motor_x2.cmd(t_x2 * power_k);
+	rm_motor_y2.cmd(t_y2 * power_k);
 }
 
 static uint32_t up_accel_ms = 0;
@@ -731,28 +764,24 @@ extern "C" void control_task()
 			/*if (fabsf(rm_motor_pid_speed_x.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
-
 			rm_motor_pid_speed_y.calc(target_speed_up, rm_motor_y.speed);
 			float ffm_y = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_y.cmd(rm_motor_pid_speed_y.out + ffm_y);
-
 			rm_motor_pid_speed_x2.calc(target_speed_up, rm_motor_x2.speed);
 			float ffm_x2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_x2.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_x2.cmd(rm_motor_pid_speed_x2.out + ffm_x2);
-
 			rm_motor_pid_speed_y2.calc(-target_speed_up, rm_motor_y2.speed);
 			float ffm_y2 = 0.0f;
 			/*if (fabsf(rm_motor_pid_speed_y2.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_y2.cmd(rm_motor_pid_speed_y2.out + ffm_y2);
+			power_limited_cmd(
+				rm_motor_pid_speed_x.out + ffm_x, rm_motor_pid_speed_y.out + ffm_y,
+				rm_motor_pid_speed_x2.out + ffm_x2, rm_motor_pid_speed_y2.out + ffm_y2);
 		}
 
 		// ========================================
@@ -775,8 +804,6 @@ extern "C" void control_task()
 			/*if (fabsf(rm_motor_pid_speed_x.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_x = (rm_motor_pid_speed_x.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_x.cmd(rm_motor_pid_speed_x.out + ffm_x);
-
 			float target_speed_y =
 				200.0f * remote.ch_lv + 200.0f * remote.ch_lh + direction * 63.0f;
 
@@ -785,8 +812,6 @@ extern "C" void control_task()
 			/*if (fabsf(rm_motor_pid_speed_y.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_y = (rm_motor_pid_speed_y.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_y.cmd(rm_motor_pid_speed_y.out + ffm_y);
-
 			float target_speed_x2 =
 				200.0f * remote.ch_lv - 200.0f * remote.ch_lh + direction * 63.0f;
 
@@ -795,8 +820,6 @@ extern "C" void control_task()
 			/*if (fabsf(rm_motor_pid_speed_x2.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_x2 = (rm_motor_pid_speed_x2.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_x2.cmd(rm_motor_pid_speed_x2.out + ffm_x2);
-
 			float target_speed_y2 =
 				-200.0f * remote.ch_lv - 200.0f * remote.ch_lh + direction * 63.0f;
 
@@ -805,7 +828,9 @@ extern "C" void control_task()
 			/*if (fabsf(rm_motor_pid_speed_y2.out) > 0.5f) {  // 目标速度够大才补偿
                 ffm_y2 = (rm_motor_pid_speed_y2.out > 0 ? 1.0f : -1.0f) * 0.052f;
             }*/
-			rm_motor_y2.cmd(rm_motor_pid_speed_y2.out + ffm_y2);
+			power_limited_cmd(
+				rm_motor_pid_speed_x.out + ffm_x, rm_motor_pid_speed_y.out + ffm_y,
+				rm_motor_pid_speed_x2.out + ffm_x2, rm_motor_pid_speed_y2.out + ffm_y2);
 #else
 			rm_motor_x.cmd(0.0f);
 			rm_motor_y.cmd(0.0f);
@@ -841,6 +866,8 @@ extern "C" void control_task()
 		}
 
 		update_chassis_speed();
+
+		motor_sums.update();  // 反馈版：只给 Plotter/打印看，不参与控制
 
 		// UP 档：用刚更新完的车速积分路程(净位移，前进为正)
 		// 循环周期恰好 1 ms(osDelay(1) + 1kHz tick)，所以 dt 直接写 0.001f
