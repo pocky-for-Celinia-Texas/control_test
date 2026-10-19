@@ -62,7 +62,6 @@ struct MotorSums
 		calc_pin();	 // 三个和一变，p_in 立刻同步
 	}
 
-	// 观测入口：τ 用反馈值，只给 Plotter / 打印用，不参与控制
 	void update_from_motors(
 		const sp::RM_Motor & mx, const sp::RM_Motor & my, const sp::RM_Motor & mx2,
 		const sp::RM_Motor & my2, uint32_t now_ms)
@@ -74,7 +73,7 @@ struct MotorSums
 				my2.is_alive(now_ms);
 	}
 
-	void update()  // 观测入口的便捷版
+	void update()
 	{
 		update_from_motors(rm_motor_x, rm_motor_y, rm_motor_x2, rm_motor_y2, osKernelSysTick());
 	}
@@ -109,10 +108,14 @@ struct MotorSums
 		return k;
 	}
 
+	// 给定缩放系数 k 时，模型预测的输入功率 W
+	// k=1 → 未缩放（就是 p_in）；k=power_k → 缩放后的预测实际功率
+	float power_at(float k) const { return k * s_tw + P_K1 * s_tt * k * k + P_K2 * s_ww + P_K3; }
+
   private:
 	void calc_pin()
 	{
-		p_in = s_tw + P_K1 * s_tt + P_K2 * s_ww + P_K3;
+		p_in = power_at(1.0f);
 
 		if (!std::isfinite(p_in)) {	 // NaN/Inf 不能流到 PID、限幅、积分
 			s_tw = s_tt = s_ww = p_in = 0.0f;

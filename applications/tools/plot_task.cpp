@@ -8,8 +8,9 @@
 extern sp::Mahony imu;	// ← 声明外部对象
 
 // control_task.cpp 里的功率限制中间量
-extern float power_k;		  // 本帧实际生效的缩放系数 [0, 1]
-extern float power_pin_pred;  // 本帧预测功率（不缩放时会用多少瓦）
+extern float power_k;		   // 本帧实际生效的缩放系数 [0, 1]
+extern float power_pin_pred;   // 本帧预测功率（不缩放时会用多少瓦）
+extern float power_pin_after;  // 本帧修正后预测功率（限幅器拿去做判断的那个值）
 
 sp::Plotter plotter(&huart1);
 
@@ -31,6 +32,7 @@ extern "C" void plot_task()
 	while (1) {
 		plotter.plot(
 			power_pin_pred,
+			power_pin_after,
 			power_meter.power,
 			//power_k,
 			//motor_sums.p_in,

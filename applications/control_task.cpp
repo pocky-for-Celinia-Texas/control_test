@@ -608,7 +608,13 @@ sp::PID rm_motor_pid_speed_y2(0.001f, 0.003f, 0.01f, 0.0f, 1.0f, 0.5f, 0.0f, fal
 //  （CMakeLists 里没有编译 referee/*.cpp），所以这里先用常量。
 //  接上之后把 constexpr 改成 float，在循环里 P_max = 裁判系统读到的值。
 // ==========================================================================================
-constexpr float P_MAX_W = 75.0f;  // W，底盘功率上限
+constexpr float P_MAX_W = 80.0f;  // W，底盘功率上限
+
+// ---- 实测功率反馈（功率计 0x301）----
+constexpr float P_MARGIN_W = 5.0f;		// W，模型误差余量：模型目标 = P_MAX_W - P_MARGIN_W
+constexpr float P_TRIM_TAU_S = 0.3f;	// s，实测修正时间常数（超了快压、低了慢放 4×）
+constexpr float P_TRIM_MAX_W = 30.0f;	// W，闭环时最多往下压多少
+constexpr float P_TRIM_SAFE_W = 20.0f;	// W，功率计掉线时的固定下调量（没标定可改 30）
 // ==========================================================================================
 
 // ==========================================================================================
@@ -680,6 +686,13 @@ static float smoothstep5(float u)
 float power_k = 1.0f;
 float power_pin_pred = 0.0f;
 
+// 实测功率反馈：power_trim 是"模型少算了多少瓦"的在线估计
+float power_trim = 0.0f;	   // 实测修正量 W（0 = 不修正）
+float power_pin_after = 0.0f;  // 修正后模型预测的实际功率 W
+
+static bool power_meter_seen = false;	// 是否收到过功率计
+static uint32_t power_meter_ok_ms = 0;	// 最后一次收到功率计的时刻
+
 // 四台电机的目标转矩 → 功率限制 → 下发
 // 顺序必须是「四台目标转矩全部算完 → 统一乘 K → 一起 cmd」。
 // 算一台发一台是错的：第一台下发时 K 还没定，这一帧就已经不守恒。
@@ -690,8 +703,49 @@ static void power_limited_cmd(float t_x, float t_y, float t_x2, float t_y2)
 		t_x, rm_motor_x.speed, t_y, rm_motor_y.speed, t_x2, rm_motor_x2.speed, t_y2,
 		rm_motor_y2.speed);
 
-	power_pin_pred = motor_sums.p_in;	   // 预测：K=1 时会有多少瓦（> P_MAX_W 就是在限）
-	power_k = motor_sums.calc_k(P_MAX_W);  // [0, 1]
+	const uint32_t now = osKernelSysTick();
+	const float p_target = P_MAX_W - P_MARGIN_W;  // 75 W
+
+	// ---- 实测功率慢修正：模型管快，实测管准 ----
+	// 只有"限幅器真的在决定功率"时，实测才包含模型偏差的信息：
+	//   p_in > 修正后目标 → K<1，正在限幅；
+	//   实测 > 目标       → 不管模型怎么说，已经超了。
+	// 其他时候（巡航、刹车、DOWN）保持不动，避免把"需求功率"当成"模型输出"去学。
+	const bool meter_ok = power_meter.is_alive(now);
+	if (meter_ok) {
+		power_meter_seen = true;
+		power_meter_ok_ms = now;
+
+		const bool at_limit = (motor_sums.p_in > (p_target - power_trim));
+		const bool over = (power_meter.power > p_target);
+		if (at_limit || over) {
+			const float dt = 0.001f;						 // 本循环固定 1 ms
+			const float err = power_meter.power - p_target;	 // >0：实际超了
+			// 超了压得快（τ=P_TRIM_TAU_S），低了放得慢（4×τ）
+			power_trim += err * dt / (err > 0.0f ? P_TRIM_TAU_S : P_TRIM_TAU_S * 4.0f);
+		}
+	}
+	else if (!power_meter_seen || (now - power_meter_ok_ms) > 1000u) {
+		// 从没收到 / 掉线超过 1 s：退到安全值
+		power_trim = P_TRIM_SAFE_W;
+	}
+	// 掉线 1 s 内保持上次修正量（模型偏差是慢变量）
+
+	if (power_trim < 0.0f) power_trim = 0.0f;
+	if (power_trim > P_TRIM_MAX_W) power_trim = P_TRIM_MAX_W;
+
+	const float p_target_eff = p_target - power_trim;
+
+	power_pin_pred = motor_sums.p_in;			// K=1 的预测（只给 plot 看）
+	power_k = motor_sums.calc_k(p_target_eff);	// 模型 + 实测修正，[0, 1]
+
+	// 硬兜底：实测真的超过 P_MAX_W，按比例再砍一刀
+	if (meter_ok && power_meter.power > P_MAX_W) {
+		power_k *= P_MAX_W / power_meter.power;
+	}
+
+	// 修正后的预测实际功率：乘完最终 K（含硬兜底）后，模型认为会有多少瓦
+	power_pin_after = motor_sums.power_at(power_k);
 
 	rm_motor_x.cmd(t_x * power_k);
 	rm_motor_y.cmd(t_y * power_k);
@@ -715,21 +769,25 @@ extern "C" void control_task()
 	static sp::DBusSwitchMode last_sw_r = sp::DBusSwitchMode::DOWN;
 
 	while (true) {
-		// 检测拨杆模式变化：如果刚刚离开 UP 模式，则重置加速计时和速度环积分
+		// 检测拨杆模式变化：进入 UP 档时把上次动作的状态全部清零、重新跑一次；
+		// 切出 UP 档时保持现状（up_distance_m 冻结），方便复盘"它停在哪"
 		bool mode_changed = (remote.sw_r != last_sw_r);
-		if (mode_changed && last_sw_r == sp::DBusSwitchMode::UP) {
-			up_accel_ms = 0;
+		if (mode_changed) {
+			// 进入 UP：复位本次动作的所有状态
+			// up_start_ms 必须在这里赋值——否则它恒为 0，开机超过 UP_TIMEOUT_MS 后
+			// 第一次切 UP 就会立刻命中超时（osKernelSysTick() - 0 > UP_TIMEOUT_MS），
+			// 表现为 up_finished 马上锁存、车一动不动
+			if (remote.sw_r == sp::DBusSwitchMode::UP) {
+				up_distance_m = 0.0f;
+				up_stop_distance_m = 0.0f;
+				up_finished = false;
+				up_start_ms = osKernelSysTick();
+				up_accel_ms = 0;
+			}
 			rm_motor_pid_speed_x.clear();
 			rm_motor_pid_speed_y.clear();
 			rm_motor_pid_speed_x2.clear();
 			rm_motor_pid_speed_y2.clear();
-		}
-		// 刚切入 UP 档：路程、计时、完成标志全部复位（每次切档 = 重新跑一次动作）
-		if (mode_changed && remote.sw_r == sp::DBusSwitchMode::UP) {
-			up_distance_m = 0.0f;
-			up_accel_ms = 0;
-			up_finished = false;
-			up_start_ms = osKernelSysTick();
 		}
 		last_sw_r = remote.sw_r;
 
@@ -785,7 +843,7 @@ extern "C" void control_task()
 		}
 
 		// ========================================
-		//         右拨杆 MID：联动模式
+		//         右拨杆 MID：手动模式
 		// ========================================
 		else if (remote.sw_r == sp::DBusSwitchMode::MID) {
 #if 1  //调试时去掉mid档改为0
