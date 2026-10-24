@@ -28,9 +28,9 @@ typedef struct
 // 注意：τ 传【即将下发的指令】，ω 传【反馈转速】。
 
 // ---- 模型系数（与功率限制公式里的 K1/K2/K3 一一对应）----
-constexpr float P_K1 = 2.0f;   // Στ² 的系数（配转子 τ²）
-constexpr float P_K2 = 0.01f;  // Σω² 的系数（配轮端 ω²）
-constexpr float P_K3 = 4.0f;   // 常数偏置 W
+constexpr float P_K1 = 3.60f;	// Στ² 的系数（配转子 τ²）
+constexpr float P_K2 = 0.012f;	// Σω² 的系数（配轮端 ω²）
+constexpr float P_K3 = 4.0f;	// 常数偏置 W
 
 // ---- 转速单位换算：电机反馈是【转子 rad/s】，模型的 Σω² 要【轮端 rad/s】----
 // 轮端 ω = 转子 ω ÷ 减速比；平方后等价于乘 1/187.69

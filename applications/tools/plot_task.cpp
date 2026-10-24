@@ -31,13 +31,13 @@ extern "C" void plot_task()
 {
 	while (1) {
 		plotter.plot(
-			power_pin_pred,
-			power_pin_after,
-			power_meter.power,
+			80.0f,
+			// power_pin_after
+			power_meter.power
 			//power_k,
 			//motor_sums.p_in,
 			//motor_sums.s_tw,
-			chassis.vx
+			//chassis.vx
 		);
 
 		osDelay(5);
